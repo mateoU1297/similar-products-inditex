@@ -18,8 +18,37 @@ springdoc:
 clients:
   products:
     base-url: http://localhost:3001
-    timeout-ms: 3000
+    timeout-ms: 1000
 
 logging:
   level:
     com.similarproducts: INFO
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      similarIds:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 1000ms
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 5s
+      productById:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 1000ms
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 5s
+
+  timelimiter:
+    instances:
+      similarIds:
+        timeout-duration: 2s
+        cancel-running-future: true
+      productById:
+        timeout-duration: 1s
+        cancel-running-future: true
