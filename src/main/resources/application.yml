@@ -6,12 +6,20 @@ management:
     web:
       exposure:
         include: health,info
-  endpoint:
-    health:
-      probes:
-        enabled: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: alpha
+    tagsSorter: alpha
 
 clients:
   products:
     base-url: http://localhost:3001
-    timeout-ms: 500
+    timeout-ms: 3000
+
+logging:
+  level:
+    com.similarproducts: INFO

@@ -6,82 +6,84 @@ import com.similarproducts.inditex.errors.NotFoundException;
 import com.similarproducts.inditex.errors.UpstreamException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.netty.http.client.HttpClient;
+import org.springframework.web.client.HttpClientErrorException.NotFound;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
-import java.time.Duration;
+import java.net.SocketTimeoutException;
+import java.util.Arrays;
 import java.util.List;
 
 @Slf4j
 @Component
 public class ProductsApiClient {
 
-    private final WebClient webClient;
-    private final Duration timeout;
+    private final RestClient restClient;
 
-    public ProductsApiClient(@Value("${clients.products.base-url}") String baseUrl,
-                             @Value("${clients.products.timeout-ms:500}") long timeoutMs) {
+    public ProductsApiClient(
+            @Value("${clients.products.base-url}") String baseUrl,
+            @Value("${clients.products.timeout-ms}") int timeoutMs) {
 
-        this.timeout = Duration.ofMillis(timeoutMs);
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(timeoutMs);
+        requestFactory.setReadTimeout(timeoutMs);
 
-        HttpClient http = HttpClient.create()
-                .responseTimeout(this.timeout)
-                .compress(true);
-
-        this.webClient = WebClient.builder()
+        this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
-                .clientConnector(new ReactorClientHttpConnector(http))
+                .requestFactory(requestFactory)
                 .build();
+
+        log.info("ProductsApiClient baseUrl={} timeoutMs={}", baseUrl, timeoutMs);
     }
 
     public List<String> getSimilarIds(String id) {
         try {
-            return webClient.get()
+            Integer[] ids = restClient.get()
                     .uri("/product/{id}/similarids", id)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, rsp -> {
-                        if (rsp.statusCode() == HttpStatus.NOT_FOUND) return rsp.createException().map(e -> new NotFoundException());
-                        return rsp.createException().map(e -> new UpstreamException("4xx from upstream"));
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, rsp -> rsp.createException().map(e -> new UpstreamException("5xx from upstream")))
-                    .bodyToFlux(String.class)
-                    .collectList()
-                    .block(timeout);
-        } catch (WebClientResponseException.NotFound e) {
+                    .body(Integer[].class);
+
+            return Arrays.stream(ids != null ? ids : new Integer[0])
+                    .map(String::valueOf)
+                    .toList();
+
+        } catch (NotFound e) {
             throw new NotFoundException();
+        } catch (HttpServerErrorException e) {
+            throw new UpstreamException("5xx from upstream on /similarids: " + e.getStatusCode());
+        } catch (RestClientResponseException e) {
+            throw new UpstreamException("4xx from upstream on /similarids: " + e.getStatusCode());
         } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout")) {
-                throw new GatewayTimeoutException();
+            if (e.getCause() instanceof SocketTimeoutException) {
+                throw new GatewayTimeoutException("Timeout calling /similarids");
             }
-            throw new UpstreamException("Error calling similarids", e);
+            throw new UpstreamException("Error calling /similarids", e);
         }
     }
 
     public ProductDetailDTO getProductById(String id) {
         try {
-            return webClient.get()
+            return restClient.get()
                     .uri("/product/{id}", id)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, rsp -> {
-                        if (rsp.statusCode() == HttpStatus.NOT_FOUND) return rsp.createException().map(e -> new NotFoundException());
-                        return rsp.createException().map(e -> new UpstreamException("4xx from upstream"));
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, rsp -> rsp.createException().map(e -> new UpstreamException("5xx from upstream")))
-                    .bodyToMono(ProductDetailDTO.class)
-                    .block(timeout);
-        } catch (WebClientResponseException.NotFound e) {
+                    .onStatus(HttpStatusCode::is5xxServerError, (rq, rs) -> { throw new UpstreamException("5xx from upstream on /product/"+id); })
+                    .body(ProductDetailDTO.class);
+
+        } catch (NotFound e) {
             throw new NotFoundException();
+        } catch (HttpServerErrorException e) {
+            throw new UpstreamException("5xx from upstream on /product/" + id + ": " + e.getStatusCode());
+        } catch (RestClientResponseException e) {
+            throw new UpstreamException("4xx from upstream on /product/" + id + ": " + e.getStatusCode());
         } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout")) {
-                throw new GatewayTimeoutException();
+            if (e.getCause() instanceof SocketTimeoutException) {
+                throw new GatewayTimeoutException("Timeout calling /product/" + id);
             }
-            throw new UpstreamException("Error calling product by id", e);
+            throw new UpstreamException("Error calling /product/" + id, e);
         }
     }
-
 }
