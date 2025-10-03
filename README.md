@@ -62,4 +62,3 @@ docker run -p 5000:5000 --network host similar-products-service:latest
   - Upstream 404 → 404
   - Upstream timeout → 504
   - Upstream 5xx → 502
-- Code organized as controller → service → client (ports & adapters friendly).
