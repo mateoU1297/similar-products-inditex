@@ -48,7 +48,7 @@ public class ProductSimilarityServiceImpl implements ProductSimilarityService {
                 .transformDeferred(TimeLimiterOperator.of(tlIds))
                 .distinct()
                 .flatMap(simId ->
-                                client.getProductById(simId)
+                                Mono.defer(() -> client.getProductById(simId))
                                         .transformDeferred(CircuitBreakerOperator.of(cbDetail))
                                         .transformDeferred(TimeLimiterOperator.of(tlDetail))
                                         .retryWhen(reactor.util.retry.Retry.max(1)
